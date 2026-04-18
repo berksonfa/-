@@ -119,6 +119,101 @@ jobs:
             }
 
             Write-Host "9hits started, pid=$($p.Id)"
+
+            Add-Type @"
+            using System;
+            using System.Text;
+            using System.Runtime.InteropServices;
+            
+            public class WinApi {
+                [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+                [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Auto)]
+                public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+            }
+            "@
+            
+            function Get-WindowTitleByPid {
+                param([int]$Pid)
+            
+                $p = Get-Process -Id $Pid -ErrorAction SilentlyContinue
+                if (!$p) { return $null }
+            
+                $titles = @()
+            
+                foreach ($proc in Get-Process | Where-Object { $_.Id -eq $Pid }) {
+                    if ($proc.MainWindowHandle -and $proc.MainWindowHandle -ne 0) {
+                        $sb = New-Object System.Text.StringBuilder 1024
+                        [void][WinApi]::GetWindowText($proc.MainWindowHandle, $sb, $sb.Capacity)
+                        $t = $sb.ToString().Trim()
+                        if ($t) { $titles += $t }
+                    }
+                }
+            
+                return ($titles | Select-Object -Unique)
+            }
+            
+            Write-Host "Checking 9Hits state..."
+            
+            $proc = Get-Process | Where-Object {
+                $_.ProcessName -match '9hits|surf|exchange'
+            } | Select-Object -First 1
+            
+            if (!$proc) {
+                Write-Host "9Hits process not found"
+                exit 1
+            }
+            
+            Write-Host "PID: $($proc.Id)"
+            Write-Host "Process: $($proc.ProcessName)"
+            Write-Host ("Started: {0}" -f $proc.StartTime)
+            
+            $titles = Get-WindowTitleByPid -Pid $proc.Id
+            if ($titles -and $titles.Count -gt 0) {
+                Write-Host "Window title(s):"
+                $titles | ForEach-Object { Write-Host " - $_" }
+            } else {
+                Write-Host "No visible window title found"
+            }
+            
+            # CPU/RAM самого процесса
+            try {
+                $p1 = Get-Process -Id $proc.Id
+                $cpu1 = $p1.CPU
+                Start-Sleep 15
+                $p2 = Get-Process -Id $proc.Id -ErrorAction Stop
+                $cpu2 = $p2.CPU
+            
+                $cpuDelta = [math]::Round(($cpu2 - $cpu1), 2)
+                $ramMb = [math]::Round($p2.WorkingSet64 / 1MB, 2)
+            
+                Write-Host "Process CPU delta over 15s: $cpuDelta sec"
+                Write-Host "Process RAM: $ramMb MB"
+            
+                $suspectIdle = $false
+            
+                if ($cpuDelta -lt 0.05) {
+                    $suspectIdle = $true
+                    Write-Host "Possible idle sign: almost no CPU activity"
+                }
+            
+                if ($titles) {
+                    $joined = ($titles -join ' | ')
+                    if ($joined -match 'IDLE|WAIT|PAUSE|STOP|LOGIN|SIGN IN') {
+                        $suspectIdle = $true
+                        Write-Host "Possible idle sign: window title suggests waiting/idle state"
+                    }
+                }
+            
+                if ($suspectIdle) {
+                    Write-Host "RESULT: 9Hits is running, but may be IDLE / not actually working"
+                } else {
+                    Write-Host "RESULT: 9Hits is running and shows signs of activity"
+                }
+            }
+            catch {
+                Write-Host "Failed while checking live activity: $($_.Exception.Message)"
+            }
+            
             return $p
           }
 
