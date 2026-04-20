@@ -3,19 +3,19 @@ name: CI
 on:
   workflow_dispatch:
   schedule:
-    - cron: "5 10,2 * * *"   # можно оставить как резервный
+    - cron: "5 10,2 * * *" 
 
 permissions:
   contents: read
 
 concurrency:
   group: ci-chain
-  cancel-in-progress: false   # <-- изменено с true на false
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 300      # увеличил до 5 часов (4ч работы + 5мин пауза + запас)
+    timeout-minutes: 300
 
     steps:
       - uses: actions/checkout@v4
