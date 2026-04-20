@@ -251,6 +251,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.MiS_TOKEN }} 
         run: |
-          gh workflow run "${{ github.workflow }}" \
-            --repo "${{ github.repository }}" \
-            --ref "${{ github.ref_name }}"
+          run: gh workflow run "${{ github.workflow }}" --repo "${{ github.repository }}" --ref "${{ github.ref_name }}"
